@@ -20,7 +20,7 @@ export default function Navbar() {
         <div className="px-5 sm:px-8 h-16 flex items-center justify-between rounded-full">
           {/* LOGO: Isotipo Ojo + Tipografía Orbitron 900 */}
           <Link to="/" className="flex items-start gap-3 group">
-            <div className="w-8 h-8 transition-transform duration-300 group-hover:scale-110">
+            <div className="w-10 h-10 transition-transform duration-300 group-hover:scale-110">
               <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_8px_rgba(98,168,219,0.8)]">
                 {/* Fondo círculo exterior */}
                 <circle cx="50" cy="50" r="48" fill="#000000" stroke="#62A8DB" strokeWidth="2" />
