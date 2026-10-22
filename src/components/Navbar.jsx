@@ -43,10 +43,10 @@ export default function Navbar() {
                 <Link
                   key={link.name}
                   to={link.href}
-                  className={`px-4 py-1.5 rounded-full text-[11px] font-bold tracking-[0.15em] transition-all duration-200 ${
+                  className={`px-4 py-1.5 rounded-full text-[14px] font-bold tracking-[0.15em] transition-all duration-200 ${
                     isActive
                       ? 'text-[#62A8DB] bg-[#62A8DB]/20 border border-[#62A8DB]/40 shadow-[0_0_12px_rgba(98,168,219,0.3)]'
-                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                      : 'text-zinc-200 hover:text-white hover:bg-white/5'
                   }`}
                 >
                   {link.name}
