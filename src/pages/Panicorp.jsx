@@ -10,15 +10,15 @@ const tarjetas = [
     id: '01',
     tag: 'CONCEPTO BASE',
     titulo: '¿QUÉ ES PANICORP?',
-    corto: 'QUÉ ES',
+    corto: 'PANICORP  ',
     subtitulo: 'SISTEMA DE RECALIBRACIÓN SENSORIAL',
-    video: '/video1.mp4',
+    video: '/panicorp/video1.mp4',
     descripcion:
-      'Panicorp es un entorno digital e interactivo desarrollado para la exploración, prototipado de interfaces avanzadas y experiencias inmersivas.',
+      'PANICORP es una empresa de neurotecnología y bienestar sensorial enfocada en el estudio, análisis y transformación de la percepción humana. Su propuesta combina investigación experimental, interacción tecnológica y sistemas de respuesta en tiempo real para explorar cómo los estímulos visuales, auditivos y táctiles influyen en la manera en que las personas interpretan su entorno.',
     puntos: [
-      'Centro de pruebas para desarrollo frontend de alto rendimiento con React y Vite.',
-      'Exploración de la interacción entre diseño de interfaces, efectos visuales y audio.',
-      'Arquitectura de componentes modulares y diseño adaptativo en Tailwind CSS.',
+      'Centro de pruebas de alto desarrollo para la mejora y experimentacion humana.',
+      'Exploracion entre la realidad y la percepción, con un enfoque en la neurociencia aplicada.',
+      'Diseño de experiencias sensoriales inmersivas que desafían los sentidos y promueven la conciencia sensorial.',
     ],
     metricas: [
       { label: 'TIPO DE PLATAFORMA', val: 'WEB / EXPERIMENTAL' },
@@ -28,20 +28,20 @@ const tarjetas = [
   {
     id: '02',
     tag: 'INVESTIGACIÓN Y DESARROLLO',
-    titulo: 'PROPÓSITO ACADÉMICO',
-    corto: 'PROPÓSITO',
-    subtitulo: 'APLICACIÓN Y METODOLOGÍA',
-    video: '/video2.mp4',
+    titulo: 'Experiencia de recalibración sensorial',
+    corto: 'EXPERIENCIA',
+    subtitulo: 'EXPERIMENTACION SENSORIAL Y SOFTWARE A LA MEDIDA',
+    video: '/panicorp/video2.mp4',
     descripcion:
-      'Proyecto orientativo para validar buenas prácticas de ingeniería de software, usabilidad y optimización de renderizado en la web.',
+      'En esta experiencia de recalibración sensorial, PANICORP combina investigación experimental con desarrollo de software a medida para explorar cómo los estímulos visuales, auditivos y táctiles pueden influir en la percepción humana. El programa permite a los usuarios interactuar con entornos digitales y análogos inmersivos que desafían sus sentidos y promueven una mayor conciencia sensorial.',
     puntos: [
       'Estudio de la percepción del usuario mediante interfaces no convencionales.',
-      'Implementación de flujos de trabajo modernos de desarrollo y control de versiones.',
-      'Bitácora técnica abierta sobre decisiones de diseño y arquitectura.',
+      'Desarrollo de experiencia en tiempo real con respuesta a estímulos sensoriales.',
+      'Lo que se consideroa "normal" es cuestionado y reconfigurado para explorar nuevas formas de interacción y percepción.',
     ],
     metricas: [
-      { label: 'ENFOQUE', val: 'INGENIERÍA & UI/UX' },
-      { label: 'DOCUMENTACIÓN', val: 'DISPONIBLE EN MAKING OF' },
+      { label: 'ENFOQUE', val: 'SEONSORIAL & EXPERIMENTAL' },
+      { label: 'EXPERIENCIA', val: 'DISPONIBLE EN MAKING OF' },
     ],
   },
   {
@@ -50,7 +50,7 @@ const tarjetas = [
     titulo: 'NUESTRA MISIÓN',
     corto: 'MISIÓN',
     subtitulo: 'EXCELENCIA TÉCNICA Y ESTÉTICA',
-    video: '/video3.mp4',
+    video: '/panicorp/video3.mp4',
     descripcion:
       'Demostrar que el desarrollo de software puede fusionar un rendimiento técnico impecable con una identidad visual inmersiva.',
     puntos: [
@@ -227,7 +227,7 @@ export default function Panicorp() {
                 </p>
 
                 <p
-                  className="text-in text-sm text-zinc-200 leading-relaxed font-sans mb-6"
+                  className="text-in text-lg text-zinc-200 leading-relaxed font-sans mb-6"
                   style={{ animationDelay: '300ms' }}
                 >
                   {actual.descripcion}
@@ -237,7 +237,7 @@ export default function Panicorp() {
                   {actual.puntos.map((p, idx) => (
                     <div
                       key={idx}
-                      className="text-in flex items-start gap-2.5 text-xs text-zinc-300 font-sans leading-relaxed"
+                      className="text-in flex items-start gap-2.5 text-md text-zinc-300 font-sans leading-relaxed"
                       style={{ animationDelay: `${400 + idx * 100}ms` }}
                     >
                       <span className="text-[#62A8DB] font-bold">▸</span>
@@ -294,10 +294,10 @@ export default function Panicorp() {
                       <video
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                         src={c.video}
-                        autoPlay
                         loop
                         muted
                         playsInline
+                        preload="metadata"
                         aria-hidden="true"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/30" />
