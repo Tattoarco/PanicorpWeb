@@ -29,7 +29,7 @@ const tarjetas = [
     id: '02',
     tag: 'INVESTIGACIÓN Y DESARROLLO',
     titulo: 'Experiencia de recalibración sensorial',
-    corto: 'EXPERIENCIA',
+    corto: 'PROYECTO',
     subtitulo: 'EXPERIMENTACION SENSORIAL Y SOFTWARE A LA MEDIDA',
     video: '/panicorp/video2.mp4',
     descripcion:
@@ -66,9 +66,29 @@ const tarjetas = [
 ];
 
 const AUTOPLAY_MS = 9000; // tiempo que se queda cada sección (después de mostrar el texto)
-const EXPAND_MS = 1000; // duración de la expansión del video
-const TEXT_DELAY_MS = 750; // cuándo empieza a aparecer el texto (durante el final de la expansión)
+const EXPAND_MS = 1200; // duración de la expansión del video
+const TEXT_DELAY_MS = 900; // cuándo empieza a aparecer el texto (durante el final de la expansión)
 const FULL = 'inset(0px 0px 0px 0px)';
+
+// Divide el texto en párrafos de unas tres líneas en el ancho de escritorio.
+function separarDescripcion(texto, maxCaracteres = 190) {
+  const oraciones = texto.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [texto];
+  const parrafos = [];
+  let parrafo = '';
+
+  oraciones.forEach((oracion) => {
+    const siguiente = `${parrafo}${parrafo ? ' ' : ''}${oracion.trim()}`;
+    if (parrafo && siguiente.length > maxCaracteres) {
+      parrafos.push(parrafo.trim());
+      parrafo = oracion.trim();
+    } else {
+      parrafo = siguiente;
+    }
+  });
+
+  if (parrafo) parrafos.push(parrafo.trim());
+  return parrafos;
+}
 
 export default function Panicorp() {
   const [active, setActive] = useState(0);
@@ -76,13 +96,17 @@ export default function Panicorp() {
   const [clip, setClip] = useState(FULL); // clip-path del video que se expande
   const [animar, setAnimar] = useState(false); // activa la transición del clip-path
   const [textoListo, setTextoListo] = useState(false);
+  const [textoActive, setTextoActive] = useState(0);
   const [pausado, setPausado] = useState(false);
 
   const cardRefs = useRef([]);
+  const activeVideoRef = useRef(null);
+  const baseVideoRef = useRef(null);
   const activeRef = useRef(0);
   const timers = useRef([]);
   const total = tarjetas.length;
   const actual = tarjetas[active];
+  const textoActual = tarjetas[textoActive];
 
   const limpiarTimers = () => {
     timers.current.forEach(clearTimeout);
@@ -105,6 +129,7 @@ export default function Panicorp() {
     activeRef.current = i;
     setActive(i);
     setTextoListo(false);
+    timers.current.push(setTimeout(() => setTextoActive(i), 680));
 
     // 1) coloca el video exactamente sobre la card, sin transición
     setAnimar(false);
@@ -121,7 +146,12 @@ export default function Panicorp() {
     // 3) el texto aparece cuando la imagen casi termina de expandirse
     timers.current.push(setTimeout(() => setTextoListo(true), TEXT_DELAY_MS));
     // 4) al terminar, el video expandido se convierte en el fondo base
-    timers.current.push(setTimeout(() => setBase(i), EXPAND_MS + 50));
+    timers.current.push(setTimeout(() => {
+      setBase(i);
+      // Conserva el fotograma actual como imagen cuando la tarjeta termina de expandirse.
+      activeVideoRef.current?.pause();
+      baseVideoRef.current?.pause();
+    }, EXPAND_MS + 50));
   };
 
   const siguiente = () => ir((activeRef.current + 1) % total);
@@ -150,6 +180,7 @@ export default function Panicorp() {
       {/* FONDO BASE: el último video que ya llenó la pantalla */}
       {base !== null && (
         <video
+          ref={baseVideoRef}
           key={`base-${base}`}
           className="fixed inset-0 z-0 h-full w-full object-cover pointer-events-none"
           src={tarjetas[base].video}
@@ -163,6 +194,7 @@ export default function Panicorp() {
 
       {/* VIDEO QUE SE EXPANDE: sale de la card y crece hasta cubrir todo el fondo */}
       <video
+        ref={activeVideoRef}
         key={`active-${active}`}
         className="fixed inset-0 z-0 h-full w-full object-cover pointer-events-none"
         src={actual.video}
@@ -173,7 +205,7 @@ export default function Panicorp() {
         aria-hidden="true"
         style={{
           clipPath: clip,
-          transition: animar ? `clip-path ${EXPAND_MS}ms cubic-bezier(.76,0,.24,1)` : 'none',
+          transition: animar ? `clip-path ${EXPAND_MS}ms cubic-bezier(.22,1,.36,1)` : 'none',
         }}
       />
 
@@ -202,13 +234,13 @@ export default function Panicorp() {
             {/* ===== TEXTO: aparece cuando el video ya llenó el fondo ===== */}
             <div
               className="max-w-xl"
-              style={{ opacity: textoListo ? 1 : 0, pointerEvents: textoListo ? 'auto' : 'none' }}
+              style={{ opacity: textoListo ? 1 : 0, transform: textoListo ? 'translateY(0)' : 'translateY(12px)', filter: textoListo ? 'blur(0)' : 'blur(3px)', transition: 'opacity 680ms ease, transform 750ms cubic-bezier(.2,.8,.2,1), filter 680ms ease', pointerEvents: textoListo ? 'auto' : 'none' }}
             >
-              <div key={`${active}-${textoListo}`}>
+              <div key={textoActive}>
                 <div className="text-in flex items-center gap-3 mb-5">
                   <span className="block w-8 h-[2px] bg-[#62A8DB]" />
                   <span className="text-[10px] font-bold tracking-[0.3em] text-[#62A8DB] uppercase px-3 py-1.5 bg-[#62A8DB]/10 border border-[#62A8DB]/30 backdrop-blur-md">
-                    {actual.tag}
+                    {textoActual.tag}
                   </span>
                 </div>
 
@@ -216,25 +248,27 @@ export default function Panicorp() {
                   className="text-in text-4xl sm:text-5xl xl:text-6xl font-[900] tracking-wider leading-[1.05] text-white drop-shadow-[0_0_25px_rgba(98,168,219,0.35)]"
                   style={{ animationDelay: '100ms' }}
                 >
-                  {actual.titulo}
+                  {textoActual.titulo}
                 </h1>
 
                 <p
                   className="text-in text-[11px] font-bold tracking-[0.25em] text-[#62A8DB] mt-3 mb-5 uppercase"
                   style={{ animationDelay: '200ms' }}
                 >
-                  {actual.subtitulo}
+                  {textoActual.subtitulo}
                 </p>
 
-                <p
-                  className="text-in text-lg text-zinc-200 leading-relaxed font-sans mb-6"
+                <div
+                  className="text-in text-lg text-zinc-200 leading-relaxed font-sans mb-6 space-y-3"
                   style={{ animationDelay: '300ms' }}
                 >
-                  {actual.descripcion}
-                </p>
+                  {separarDescripcion(textoActual.descripcion).map((parrafo, idx) => (
+                    <p key={idx}>{parrafo}</p>
+                  ))}
+                </div>
 
                 <div className="space-y-3 mb-7">
-                  {actual.puntos.map((p, idx) => (
+                  {textoActual.puntos.map((p, idx) => (
                     <div
                       key={idx}
                       className="text-in flex items-start gap-2.5 text-md text-zinc-300 font-sans leading-relaxed"
@@ -250,7 +284,7 @@ export default function Panicorp() {
                   className="text-in pt-4 border-t border-[#62A8DB]/25 space-y-2 mb-8 max-w-md"
                   style={{ animationDelay: '700ms' }}
                 >
-                  {actual.metricas.map((m, idx) => (
+                  {textoActual.metricas.map((m, idx) => (
                     <div key={idx} className="flex justify-between items-center gap-4 text-[10px] font-mono">
                       <span className="text-zinc-400 uppercase">{m.label}:</span>
                       <span className="text-[#62A8DB] font-bold text-right">{m.val}</span>
@@ -259,14 +293,14 @@ export default function Panicorp() {
                 </div>
 
                 <div className="text-in flex flex-wrap gap-4" style={{ animationDelay: '800ms' }}>
-                  <Link to="/nosotros">
+                  <Link to="/tecnologias">
                     <button className="px-6 py-3 text-xs font-black tracking-[0.2em] uppercase text-black bg-[#62A8DB] hover:bg-white transition-all shadow-[0_0_15px_rgba(98,168,219,0.4)]">
-                      NOSOTROS →
+                      TECNOLOGIAS →
                     </button>
                   </Link>
-                  <Link to="/tecnologias">
+                  <Link to="/nosotros  ">
                     <button className="px-6 py-3 text-xs font-black tracking-[0.2em] uppercase text-zinc-200 bg-black/40 backdrop-blur-md hover:bg-zinc-900 border border-zinc-600">
-                      STACK →
+                      NOSOTROS →
                     </button>
                   </Link>
                 </div>
@@ -294,11 +328,17 @@ export default function Panicorp() {
                       <video
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                         src={c.video}
+                        autoPlay={esActiva}
                         loop
                         muted
                         playsInline
                         preload="metadata"
                         aria-hidden="true"
+                        ref={(el) => {
+                          if (!el) return;
+                          if (esActiva) el.play().catch(() => {});
+                          else el.pause();
+                        }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/30" />
 

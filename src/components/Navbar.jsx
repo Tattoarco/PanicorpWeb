@@ -8,9 +8,10 @@ export default function Navbar() {
 
   const navLinks = [
     { name: "¿QUÉ ES PANICORP?", href: "/que-es-panicorp" },
+    { name: "PROYECTOS", href: "/proyectos" },
     { name: "TECNOLOGÍAS", href: "/tecnologias" },
-    { name: "NOSOTROS", href: "/nosotros" },
     { name: "MAKING OF", href: "/making-of" },
+    { name: "NOSOTROS", href: "/nosotros" },
   ];
 
   return (
