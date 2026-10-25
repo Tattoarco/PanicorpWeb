@@ -1,23 +1,42 @@
-import { Suspense, Component, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { Html, OrbitControls, useGLTF } from "@react-three/drei";
+import {
+  Suspense,
+  Component,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls, useGLTF } from "@react-three/drei";
 import {
   Box3,
   Color,
   DoubleSide,
   MeshStandardMaterial,
+  Quaternion,
   Vector3,
 } from "three";
 
-const defaultModel = "/models/CAJAPARAWEB.glb";
+const defaultModel = "/models/CajaWebV3glb.glb";
 const defaultPartDetails = {
   BOTON: {
     title: "Botón",
     dimensions: [["Ancho", "5 cm"]],
+    specifications: [["Función", "Activación de la instalación"]],
+  },
+  "Boton rojo": {
+    title: "Botón",
+    dimensions: [["Ancho", "5 cm"]],
+    specifications: [["Función", "Activación de la instalación"]],
   },
   Cube: {
     title: "BOTE DE BASURA",
     dimensions: [],
+  },
+  "caneca de basura": {
+    title: "BOTE DE BASURA",
+    dimensions: [["Tipo", "Caneca"]],
+    specifications: [["Uso", "Disposición de residuos"]],
   },
   MESA: {
     title: "Módulo inferior",
@@ -25,75 +44,159 @@ const defaultPartDetails = {
   },
   SILLA: {
     title: "Silla",
-    dimensions: [],
+    dimensions: [["Tipo", "Silla plástica"]],
+    specifications: [["Uso", "Asiento para visitante"]],
   },
-};
-
-const defaultFaceDetails = {
-  front: {
-    title: "PARED",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
-    specifications: [["Tipo", "Pared lateral"]],
-  },
-  back: {
-    title: "PARED",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
-    specifications: [["Tipo", "Pared lateral"]],
-  },
-  right: {
-    title: "PARED SENCILLA",
-    dimensions: [
-      ["Ancho", "200 cm"],
-      ["Alto", "200 cm"],
-    ],
-    specifications: [["Tipo", "Cara sencilla"]],
-  },
-  left: {
-    title: "PARED TV",
-    dimensions: [
-      ["Ancho", "200 cm"],
-      ["Alto", "200 cm"],
-    ],
-    specifications: [
-      ["Abertura TV", "73 × 43 cm"],
-      ["Módulo inferior", "150 cm"],
-    ],
-  },
-  top: {
-    title: "PARED",
-    dimensions: [
-      ["Ancho total", "200 cm"],
-      ["Alto", "200 cm"],
-    ],
-    specifications: [
-      ["Módulo puerta", "120 cm"],
-      ["Módulo lateral", "80 cm"],
-    ],
-  },
-  bottom: {
+  "Azulejos_Caidos": {
     title: "SUELO",
     dimensions: [
       ["Ancho", "200 cm"],
       ["Profundidad", "200 cm"],
     ],
-    specifications: [["Espesor", "16.8 cm"]],
+    specifications: [["Espesor", "6.8 cm"]],
+  },
+  "Azulejos_Pared_Trasera": {
+    title: "PARED TRASERA",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+  },
+  "Televisor": {
+    title: "TELEVISOR",
+    dimensions: [["Abertura", "73 × 43 cm"]],
+  },
+  "Habitacion como tal": {
+    title: "ESTRUCTURA PRINCIPAL",
+    dimensions: [["Área", "200 × 200 cm"]],
   },
 };
 
-function getFaceKey(point, object) {
-  const bounds = new Box3().setFromObject(object);
-  const size = bounds.getSize(new Vector3());
-  const distances = [
-    ["left", Math.abs(point.x - bounds.min.x) / size.x],
-    ["right", Math.abs(point.x - bounds.max.x) / size.x],
-    ["bottom", Math.abs(point.y - bounds.min.y) / size.y],
-    ["top", Math.abs(point.y - bounds.max.y) / size.y],
-    ["back", Math.abs(point.z - bounds.min.z) / size.z],
-    ["front", Math.abs(point.z - bounds.max.z) / size.z],
-  ].sort((first, second) => first[1] - second[1]);
+// Solo estas piezas se mueven. Cada una se pliega girando alrededor de una
+// bisagra (borde inferior de la pared) hasta quedar abatida sobre el suelo,
+// hacia afuera, como una caja que se desdobla.
+//  - hinge: punto de la bisagra en el espacio del modelo
+//  - axis:  eje de giro
+//  - angle: giro total (radianes). El signo decide hacia dónde cae.
+//  - range: tramo del slider [0-1] en el que se mueve (escalonado: primero
+//           cae la pared de la puerta y luego la trasera)
+const doorFold = {
+  hinge: [0, 0.04, 1.5], // borde inferior de la pared, lado +Z
+  axis: [1, 0, 0],
+  angle: Math.PI / 2,
+  range: [0, 0.7],
+};
+const backFold = {
+  hinge: [1.86, 0.03, 0], // borde inferior de la pared, lado +X
+  axis: [0, 0, 1],
+  angle: -Math.PI / 2,
+  range: [0.3, 1],
+};
 
-  return distances[0][0];
+const wallConfigurations = {
+  "pared lateral puerta": { faceKey: "right", fold: doorFold },
+  "pared trasera": { faceKey: "back", fold: backFold },
+  // Los azulejos van pegados a la pared trasera, usan su misma bisagra.
+  "azulejos pared trasera": { faceKey: "back", fold: backFold },
+};
+
+const clamp01 = (value) => Math.min(1, Math.max(0, value));
+const smoothstep = (value) => value * value * (3 - 2 * value);
+
+const annotationDefinitions = [
+  { name: "Habitacion como tal", title: "ESTRUCTURA PRINCIPAL", fallback: [0, 2, 0] },
+  { name: "Azulejos_Caidos", title: "SUELO", fallback: [0, 0, 0] },
+  { name: "Azulejos_Pared_Trasera", title: "REVESTIMIENTO PARED TRASERA", fallback: [0, 2.5, -2] },
+  {
+    name: "pared lateral puerta",
+    title: "PARED CON PUERTA",
+    fallback: [-0.95, 2.63, 1.49],
+    useFallback: true,
+  },
+  { name: "Pared trasera", title: "PARED TRASERA", fallback: [-2.5, 2.5, 0] },
+  { name: "MESA", title: "MÓDULO INFERIOR", fallback: [0, 0.8, 1] },
+  { name: "SILLA", title: "SILLA", fallback: [2, 0.8, 1] },
+  { name: "caneca de basura", title: "BASURA / CANECA", fallback: [-2, 0.8, 1] },
+  { name: "Televisor", title: "TELEVISOR", fallback: [0, 2, -1.5] },
+  {
+    name: "Boton rojo",
+    matchNames: ["Boton rojo", "Base del boton", "pedestal del boton"],
+    title: "BOTÓN ROJO",
+    fallback: [-1.188, 0.94, -0.218],
+    anchorTop: true,
+    useFallback: true,
+  },
+];
+
+// GLTFLoader (three.js) sanitiza los nombres de los nodos: los espacios pasan a
+// ser guiones bajos ("pared lateral puerta" -> "pared_lateral_puerta").
+// Por eso comparamos tratando espacios y "_" como lo mismo.
+function normalizeName(name = "") {
+  return name.trim().toLowerCase().replace(/[\s_]+/g, " ");
 }
+
+function findByName(root, name) {
+  const target = normalizeName(name);
+  let found = null;
+  root.traverse((object) => {
+    if (!found && normalizeName(object.name) === target) found = object;
+  });
+  return found;
+}
+
+function getWallConfiguration(name) {
+  return wallConfigurations[normalizeName(name)];
+}
+
+function getPartDetails(name) {
+  const normalizedName = normalizeName(name);
+  return Object.entries(defaultPartDetails).find(
+    ([partName]) => normalizeName(partName) === normalizedName,
+  )?.[1];
+}
+
+function getDetailsForName(name, faceDetails) {
+  const wall = getWallConfiguration(name);
+  if (wall) return faceDetails[wall.faceKey];
+
+  return getPartDetails(name);
+}
+
+const defaultFaceDetails = {
+  front: {
+    title: "PARED TRASERA",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    specifications: [["Tipo", "Cara trasera"]],
+  },
+  back: {
+    title: "PARED TRASERA",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    specifications: [["Tipo", "Cara trasera"]],
+  },
+  right: {
+    title: "PARED PUERTA",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    specifications: [["Puerta", "120 × 80 cm"]],
+  },
+  left: {
+    title: "PARED TV",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    specifications: [
+      ["Abertura TV", "73 × 43 cm"],
+      ["Módulo lateral", "60 cm"],
+      ["Nicho", "80 cm"],
+      ["Módulo superior", "30 cm"],
+      ["Módulo inferior", "150 cm"],
+    ],
+  },
+  top: {
+    title: "PARED SENCILLA",
+    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    specifications: [["Tipo", "Cara sencilla"]],
+  },
+  bottom: {
+    title: "SUELO",
+    dimensions: [["Ancho", "200 cm"], ["Profundidad", "200 cm"]],
+    specifications: [["Espesor", "6.8 cm"]],
+  },
+};
 
 function createBoxMaterial() {
   const material = new MeshStandardMaterial({
@@ -210,24 +313,43 @@ function prepareMaterials(scene) {
   return scene;
 }
 
-function FloatingDetails({ details, position, onClose }) {
+function prepareWallAnimation(scene) {
+  scene.updateMatrixWorld(true);
+  scene.traverse((object) => {
+    const configuration = getWallConfiguration(object.name);
+    if (!configuration) return;
+
+    const { hinge, axis, angle, range } = configuration.fold;
+    object.userData.fold = {
+      hinge: new Vector3(...hinge),
+      axis: new Vector3(...axis).normalize(),
+      angle,
+      range,
+      originPosition: object.position.clone(),
+      originQuaternion: object.quaternion.clone(),
+    };
+  });
+  return scene;
+}
+
+function DetailsCard({ details, onClose }) {
   return (
-    <Html position={position} center distanceFactor={5} zIndexRange={[20, 0]}>
-      <div className="relative w-64 pb-7 pl-8 text-left text-[11px] uppercase tracking-[0.12em] text-white [text-shadow:0_1px_8px_#000]">
-        <span className="absolute bottom-1 left-0 h-px w-8 origin-left -rotate-[28deg] bg-white/80" />
-        <div className="border-b border-white/70 pb-2">
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="font-semibold leading-tight">{details.title}</h2>
-            <button
-              type="button"
-              className="text-sm leading-none text-white/70 hover:text-white"
-              onClick={onClose}
-              aria-label={`Cerrar información de ${details.title}`}
-            >
-              ×
-            </button>
-          </div>
+    <div className="pointer-events-auto w-72 rounded-sm border border-cyan-200/40 bg-[#101820]/95 px-4 pb-4 pt-3 text-left text-[11px] uppercase tracking-[0.12em] text-white shadow-[0_8px_30px_rgba(0,0,0,0.6)] backdrop-blur-sm">
+      <div className="border-b border-white/40 pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="font-semibold leading-tight text-[#21f7fe]">
+            {details.title}
+          </h2>
+          <button
+            type="button"
+            className="text-sm leading-none text-white/70 hover:text-white"
+            onClick={onClose}
+            aria-label="Cerrar especificaciones"
+          >
+            ×
+          </button>
         </div>
+      </div>
         {details.dimensions.length > 0 && (
           <dl className="mt-2 space-y-1">
             {details.dimensions.map(([label, value]) => (
@@ -253,97 +375,206 @@ function FloatingDetails({ details, position, onClose }) {
             </dl>
           </>
         )}
-      </div>
-    </Html>
+    </div>
   );
 }
 
-function Model({ model, position, rotation, scale, partDetails, faceDetails }) {
+function AnnotationOverlay({ annotations, onSelect }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30">
+      {annotations.map((annotation) => (
+        <button
+          key={annotation.name}
+          type="button"
+          className="pointer-events-auto absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/35 bg-black/25 text-[9px] font-semibold text-white/75 opacity-65 backdrop-blur-sm transition-all hover:border-cyan-200/80 hover:bg-[#101820]/75 hover:text-cyan-100 hover:opacity-100"
+          style={{
+            left: `${annotation.left}px`,
+            top: `${annotation.top}px`,
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(annotation);
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label={`Ver especificaciones de ${annotation.title}`}
+          title={annotation.title}
+        >
+          {annotation.number}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Model({
+  model,
+  position,
+  rotation,
+  scale,
+  faceDetails,
+  explosionProgress,
+  onProject,
+}) {
+  const { camera, size } = useThree();
   const { scene } = useGLTF(model);
   const preparedScene = useMemo(
-    () => prepareMaterials(scene.clone(true)),
+    () => prepareWallAnimation(prepareMaterials(scene.clone(true))),
     [scene],
   );
   const groupRef = useRef();
-  const [selectedPart, setSelectedPart] = useState(null);
-  const partPositions = useMemo(() => {
-    const positions = {};
+  const explosionProgressRef = useRef(explosionProgress);
+  useEffect(() => {
+    explosionProgressRef.current = explosionProgress;
+  }, [explosionProgress]);
+  const wallObjects = useMemo(() => {
+    const objects = [];
+    preparedScene.traverse((object) => {
+      if (object.userData.fold) {
+        objects.push(object);
+      }
+    });
+    return objects;
+  }, [preparedScene]);
+  const annotations = useMemo(() => {
+    const items = [];
     preparedScene.updateMatrixWorld(true);
 
-    preparedScene.traverse((object) => {
-      if (!object.isMesh || !partDetails[object.name]) return;
+    annotationDefinitions.forEach((definition) => {
+      let object;
+      const namesToMatch = definition.matchNames ?? [definition.name];
+      preparedScene.traverse((candidate) => {
+        if (
+          !object &&
+          namesToMatch.some(
+            (name) => normalizeName(candidate.name) === normalizeName(name),
+          )
+        ) {
+          object = candidate;
+        }
+      });
 
-      const center = new Box3()
-        .setFromObject(object)
-        .getCenter(new Vector3());
-      positions[object.name] = preparedScene.worldToLocal(center);
+      const details = getDetailsForName(definition.name, faceDetails);
+      if (!details) return;
+
+      const bounds = object && !definition.useFallback
+        ? new Box3().setFromObject(object)
+        : null;
+      const position = bounds
+        ? bounds.getCenter(new Vector3())
+        : preparedScene.localToWorld(new Vector3(...definition.fallback));
+      if (bounds && definition.anchorTop) {
+        position.y = bounds.max.y;
+      }
+      const anchorPosition = object
+        ? object.worldToLocal(position.clone())
+        : preparedScene.worldToLocal(position.clone());
+      items.push({
+        number: items.length + 1,
+        name: definition.name,
+        title: definition.title,
+        details: { ...details, title: definition.title },
+        anchor: object,
+        position: anchorPosition,
+      });
     });
 
-    return positions;
-  }, [partDetails, preparedScene]);
+    return items;
+  }, [faceDetails, preparedScene]);
+
+  const smoothedProgress = useRef(0);
+  const foldRotation = useMemo(() => new Quaternion(), []);
+  const foldOffset = useMemo(() => new Vector3(), []);
+
+  useFrame((_, delta) => {
+    // Suaviza el valor del slider para que la pared se pliegue con inercia.
+    smoothedProgress.current +=
+      (explosionProgressRef.current - smoothedProgress.current) *
+      (1 - Math.exp(-6 * delta));
+
+    wallObjects.forEach((wall) => {
+      const { hinge, axis, angle, range, originPosition, originQuaternion } =
+        wall.userData.fold;
+      const local = smoothstep(
+        clamp01((smoothedProgress.current - range[0]) / (range[1] - range[0])),
+      );
+
+      // Gira la pared alrededor de la bisagra: posición y orientación.
+      foldRotation.setFromAxisAngle(axis, angle * local);
+      foldOffset.copy(originPosition).sub(hinge).applyQuaternion(foldRotation);
+      wall.position.copy(hinge).add(foldOffset);
+      wall.quaternion.copy(foldRotation).multiply(originQuaternion);
+    });
+    preparedScene.updateMatrixWorld(true);
+
+    const projectedAnnotations = annotations.flatMap((annotation) => {
+      const worldPosition = annotation.position.clone();
+      if (annotation.anchor) {
+        let ancestor = annotation.anchor;
+        let isVisible = true;
+        while (ancestor) {
+          if (!ancestor.visible) isVisible = false;
+          ancestor = ancestor.parent;
+        }
+        if (!isVisible) return [];
+        annotation.anchor.localToWorld(worldPosition);
+      } else {
+        preparedScene.localToWorld(worldPosition);
+      }
+      worldPosition.project(camera);
+      const visible =
+        worldPosition.z > -1 &&
+        worldPosition.z < 1 &&
+        Math.abs(worldPosition.x) <= 1 &&
+        Math.abs(worldPosition.y) <= 1;
+
+      return visible
+        ? [{
+            ...annotation,
+            left: ((worldPosition.x + 1) / 2) * size.width,
+            top: ((1 - worldPosition.y) / 2) * size.height,
+          }]
+        : [];
+    });
+    onProject(projectedAnnotations);
+  });
 
   return (
     <group ref={groupRef} position={position} rotation={rotation} scale={scale}>
       <primitive
         object={preparedScene}
-        onPointerDown={(event) => {
-          const partName = event.object.name;
-          if (partName === "CAJA") {
-            const faceKey = getFaceKey(event.point, event.object);
-            const point = event.point.clone();
-            groupRef.current.worldToLocal(point);
-
-            setSelectedPart((currentPart) => {
-              if (currentPart?.faceKey === faceKey) return currentPart;
-
-              return {
-                faceKey,
-                details: faceDetails[faceKey],
-                position: point,
-              };
-            });
-          } else if (partDetails[partName]) {
-            setSelectedPart((currentPart) => {
-              if (currentPart?.partName === partName) return currentPart;
-
-              return {
-                partName,
-                details: partDetails[partName],
-                position: partPositions[partName],
-              };
-            });
-          } else {
-            return;
-          }
-
-          event.stopPropagation();
-        }}
-        onPointerOver={(event) => {
-          if (partDetails[event.object.name]) {
-            event.stopPropagation();
-            document.body.style.cursor = "pointer";
-          }
-        }}
-        onPointerOut={(event) => {
-          if (partDetails[event.object.name]) {
-            event.stopPropagation();
-            document.body.style.cursor = "default";
-          }
-        }}
       />
-      {selectedPart && (
-        <FloatingDetails
-          details={selectedPart.details}
-          position={selectedPart.position}
-          onClose={() => setSelectedPart(null)}
-        />
-      )}
     </group>
   );
 }
 
 function LoadingMessage() {
-  return <Html center>Cargando modelo...</Html>;
+  return null;
+}
+
+function CameraIntro() {
+  const { camera } = useThree();
+  const elapsed = useRef(0);
+  const destination = useMemo(() => new Vector3(6, 4.5, 8), []);
+  const target = useMemo(() => new Vector3(0, 1.8, 0), []);
+  const initialPosition = useMemo(() => new Vector3(8, 5.5, 11), []);
+
+  useEffect(() => {
+    camera.position.copy(initialPosition);
+    camera.lookAt(target);
+    elapsed.current = 0;
+  }, [camera, initialPosition, target]);
+
+  useFrame((_, delta) => {
+    if (elapsed.current >= 1.8) return;
+
+    elapsed.current = Math.min(elapsed.current + delta, 1.8);
+    const progress = elapsed.current / 1.8;
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+    camera.position.lerpVectors(initialPosition, destination, easedProgress);
+    camera.lookAt(target);
+  });
+
+  return null;
 }
 
 function ExperienceContext() {
@@ -351,14 +582,6 @@ function ExperienceContext() {
     <>
       <color attach="background" args={["#101820"]} />
       <fog attach="fog" args={["#101820", 12, 24]} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
-        <planeGeometry args={[18, 18]} />
-        <meshStandardMaterial color="#26343a" roughness={0.92} />
-      </mesh>
-      <gridHelper
-        args={[18, 18, "#52727b", "#30454b"]}
-        position={[0, -0.06, 0]}
-      />
       <mesh position={[0, 3.5, -4.5]}>
         <planeGeometry args={[18, 7]} />
         <meshStandardMaterial color="#17252b" roughness={1} />
@@ -367,24 +590,9 @@ function ExperienceContext() {
         <planeGeometry args={[9, 4.5]} />
         <meshStandardMaterial color="#1b2b31" roughness={1} />
       </mesh>
-      <mesh position={[0, 0.04, 0]}>
-        <boxGeometry args={[5.2, 0.12, 5.2]} />
-        <meshStandardMaterial
-          color="#344e55"
-          roughness={0.8}
-          emissive="#102b31"
-          emissiveIntensity={0.5}
-        />
-      </mesh>
       <pointLight position={[0, 5, 1]} color="#d9f7ff" intensity={35} distance={12} />
       <pointLight position={[-4, 2.5, 3]} color="#35d3d1" intensity={18} distance={9} />
       <pointLight position={[4, 2, -2]} color="#ffb36b" intensity={12} distance={8} />
-      <Html position={[-3.5, 3.2, -4.35]} center>
-        <div className="w-52 border-l-2 border-cyan-300/70 pl-3 text-[10px] uppercase tracking-[0.18em] text-white/80 [text-shadow:0_1px_6px_#000]">
-          <strong className="block text-cyan-200">Panicorp / instalación</strong>
-          <span>Espacio de recalibración sensorial</span>
-        </div>
-      </Html>
     </>
   );
 }
@@ -422,10 +630,10 @@ export default function ModelViewer({
   scale = 1,
   faceDetails = defaultFaceDetails,
 }) {
-  const partDetails = useMemo(
-    () => ({ ...defaultPartDetails, CAJA: faceDetails }),
-    [faceDetails],
-  );
+  const [explosionProgress, setExplosionProgress] = useState(0);
+  const [selectedPart, setSelectedPart] = useState(null);
+  const [annotationPositions, setAnnotationPositions] = useState([]);
+  const isOpen = explosionProgress > 0.5;
 
   return (
     <div className={`w-full ${className}`}>
@@ -436,12 +644,42 @@ export default function ModelViewer({
             : "h-[420px] rounded-2xl border border-white/10"
         }`}
       >
+        {selectedPart && (
+          <div className="pointer-events-none absolute right-6 top-6 z-40">
+            <DetailsCard
+              details={selectedPart.details}
+              onClose={() => setSelectedPart(null)}
+            />
+          </div>
+        )}
+        <div className="pointer-events-auto absolute bottom-14 right-4 z-20 w-44 rounded-sm border border-white/15 bg-[#101820]/80 px-3 py-3 text-white backdrop-blur-sm md:bottom-6 md:right-8 md:w-52">
+          <button
+            type="button"
+            onClick={() => setExplosionProgress(isOpen ? 0 : 1)}
+            className="mb-2 w-full border border-cyan-200/50 bg-cyan-200/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-cyan-100 transition-colors hover:bg-cyan-200/25"
+          >
+            {isOpen ? "Cerrar paredes" : "Abrir paredes"}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={explosionProgress}
+            onChange={(event) =>
+              setExplosionProgress(Number(event.target.value))
+            }
+            aria-label="Abrir paredes de la caja"
+            className="block h-1 w-full cursor-ew-resize accent-cyan-300"
+          />
+        </div>
         <ModelErrorBoundary>
           <Canvas
             camera={{ position: [6, 4.5, 8], fov: 50 }}
             dpr={[1, 2]}
             gl={{ antialias: true, alpha: true }}
           >
+            <CameraIntro />
             <ExperienceContext />
             <ambientLight intensity={1.5} />
             <directionalLight position={[3, 5, 2]} intensity={2} />
@@ -452,15 +690,16 @@ export default function ModelViewer({
                 position={position}
                 rotation={rotation}
                 scale={scale}
-                partDetails={partDetails}
                 faceDetails={faceDetails}
+                explosionProgress={explosionProgress}
+                onProject={setAnnotationPositions}
               />
             </Suspense>
             <OrbitControls
               enableDamping
-              dampingFactor={0.12}
-              rotateSpeed={0.14}
-              zoomSpeed={0.35}
+              dampingFactor={0.08}
+              rotateSpeed={0.5}
+              zoomSpeed={0.65}
               enablePan={false}
               target={[0, 1.8, 0]}
               minDistance={3.5}
@@ -470,6 +709,10 @@ export default function ModelViewer({
             />
           </Canvas>
         </ModelErrorBoundary>
+        <AnnotationOverlay
+          annotations={annotationPositions}
+          onSelect={setSelectedPart}
+        />
       </div>
     </div>
   );

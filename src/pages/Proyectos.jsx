@@ -55,8 +55,8 @@ export default function Proyectos() {
               La interacción
             </h2>
             <p className="text-sm leading-relaxed text-slate-400">
-              Orbita la escena y selecciona sus paredes para conocer la
-              distribución, las medidas y la función de cada componente.
+              Orbita la escena y haz clic en los números para consultar las
+              medidas y la función de cada componente.
             </p>
           </article>
           </div>
