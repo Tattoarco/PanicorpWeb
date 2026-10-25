@@ -1,19 +1,26 @@
 import {
+  Fragment,
   Suspense,
   Component,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, useGLTF } from "@react-three/drei";
+import { Canvas, createPortal, useFrame, useThree } from "@react-three/fiber";
+import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import {
   Box3,
+  CanvasTexture,
   Color,
   DoubleSide,
+  MathUtils,
   MeshStandardMaterial,
   Quaternion,
+  Raycaster,
+  SRGBColorSpace,
+  Spherical,
   Vector3,
 } from "three";
 
@@ -379,30 +386,60 @@ function DetailsCard({ details, onClose }) {
   );
 }
 
-function AnnotationOverlay({ annotations, onSelect }) {
+// Número flotante anclado a una pieza del modelo. Se renderiza como hijo 3D de
+// la pieza (via portal), así que acompaña a la pared cuando se pliega y queda
+// sincronizado con la cámara en el mismo frame, sin pasar por el estado de React.
+// Si hay una pared de por medio entre la cámara y la pieza, el número se
+// desvanece (las paredes son de 8 a 102 triángulos: el chequeo es muy barato).
+function AnnotationMarker({ annotation, occluders, selected, onSelect }) {
+  const buttonRef = useRef(null);
+  const { camera } = useThree();
+  const elapsed = useRef(0);
+  const raycaster = useMemo(() => new Raycaster(), []);
+  const point = useMemo(() => new Vector3(), []);
+  const direction = useMemo(() => new Vector3(), []);
+
+  useFrame((_, delta) => {
+    elapsed.current += delta;
+    if (elapsed.current < 0.1) return; // ~10 comprobaciones por segundo
+    elapsed.current = 0;
+
+    const button = buttonRef.current;
+    if (!button) return;
+
+    annotation.anchor.localToWorld(point.copy(annotation.position));
+    direction.copy(point).sub(camera.position);
+    const distance = direction.length();
+    raycaster.set(camera.position, direction.divideScalar(distance));
+    raycaster.far = distance;
+
+    const hit = raycaster.intersectObjects(occluders, true)[0];
+    const hidden = Boolean(hit && hit.distance < distance - 0.1);
+    button.style.opacity = hidden ? "0" : "1";
+    button.style.pointerEvents = hidden ? "none" : "auto";
+  });
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-30">
-      {annotations.map((annotation) => (
-        <button
-          key={annotation.name}
-          type="button"
-          className="pointer-events-auto absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/35 bg-black/25 text-[9px] font-semibold text-white/75 opacity-65 backdrop-blur-sm transition-all hover:border-cyan-200/80 hover:bg-[#101820]/75 hover:text-cyan-100 hover:opacity-100"
-          style={{
-            left: `${annotation.left}px`,
-            top: `${annotation.top}px`,
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSelect(annotation);
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          aria-label={`Ver especificaciones de ${annotation.title}`}
-          title={annotation.title}
-        >
-          {annotation.number}
-        </button>
-      ))}
-    </div>
+    <Html center position={annotation.position} zIndexRange={[10, 0]}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold backdrop-blur-sm transition duration-200 md:h-5 md:w-5 md:text-[9px] ${
+          selected
+            ? "border-cyan-200 bg-cyan-300/30 text-white"
+            : "border-white/35 bg-black/30 text-white/80 hover:border-cyan-200/80 hover:text-cyan-100"
+        }`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(annotation);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        aria-label={`Ver especificaciones de ${annotation.title}`}
+        title={annotation.title}
+      >
+        {annotation.number}
+      </button>
+    </Html>
   );
 }
 
@@ -413,15 +450,14 @@ function Model({
   scale,
   faceDetails,
   explosionProgress,
-  onProject,
+  selectedName,
+  onSelect,
 }) {
-  const { camera, size } = useThree();
   const { scene } = useGLTF(model);
   const preparedScene = useMemo(
     () => prepareWallAnimation(prepareMaterials(scene.clone(true))),
     [scene],
   );
-  const groupRef = useRef();
   const explosionProgressRef = useRef(explosionProgress);
   useEffect(() => {
     explosionProgressRef.current = explosionProgress;
@@ -459,27 +495,34 @@ function Model({
       const bounds = object && !definition.useFallback
         ? new Box3().setFromObject(object)
         : null;
-      const position = bounds
+      const worldPosition = bounds
         ? bounds.getCenter(new Vector3())
         : preparedScene.localToWorld(new Vector3(...definition.fallback));
       if (bounds && definition.anchorTop) {
-        position.y = bounds.max.y;
+        worldPosition.y = bounds.max.y;
       }
-      const anchorPosition = object
-        ? object.worldToLocal(position.clone())
-        : preparedScene.worldToLocal(position.clone());
+      // Posición del número en el espacio LOCAL de la pieza: así viaja con ella.
+      const anchor = object ?? preparedScene;
       items.push({
         number: items.length + 1,
         name: definition.name,
         title: definition.title,
         details: { ...details, title: definition.title },
-        anchor: object,
-        position: anchorPosition,
+        anchor,
+        position: anchor.worldToLocal(worldPosition.clone()),
       });
     });
 
     return items;
   }, [faceDetails, preparedScene]);
+
+  const occluders = useMemo(
+    () =>
+      ["Habitacion como tal", "pared lateral puerta", "Pared trasera"]
+        .map((name) => findByName(preparedScene, name))
+        .filter(Boolean),
+    [preparedScene],
+  );
 
   const smoothedProgress = useRef(0);
   const foldRotation = useMemo(() => new Quaternion(), []);
@@ -489,7 +532,7 @@ function Model({
     // Suaviza el valor del slider para que la pared se pliegue con inercia.
     smoothedProgress.current +=
       (explosionProgressRef.current - smoothedProgress.current) *
-      (1 - Math.exp(-6 * delta));
+      (1 - Math.exp(-6 * Math.min(delta, 0.05)));
 
     wallObjects.forEach((wall) => {
       const { hinge, axis, angle, range, originPosition, originQuaternion } =
@@ -505,94 +548,317 @@ function Model({
       wall.quaternion.copy(foldRotation).multiply(originQuaternion);
     });
     preparedScene.updateMatrixWorld(true);
-
-    const projectedAnnotations = annotations.flatMap((annotation) => {
-      const worldPosition = annotation.position.clone();
-      if (annotation.anchor) {
-        let ancestor = annotation.anchor;
-        let isVisible = true;
-        while (ancestor) {
-          if (!ancestor.visible) isVisible = false;
-          ancestor = ancestor.parent;
-        }
-        if (!isVisible) return [];
-        annotation.anchor.localToWorld(worldPosition);
-      } else {
-        preparedScene.localToWorld(worldPosition);
-      }
-      worldPosition.project(camera);
-      const visible =
-        worldPosition.z > -1 &&
-        worldPosition.z < 1 &&
-        Math.abs(worldPosition.x) <= 1 &&
-        Math.abs(worldPosition.y) <= 1;
-
-      return visible
-        ? [{
-            ...annotation,
-            left: ((worldPosition.x + 1) / 2) * size.width,
-            top: ((1 - worldPosition.y) / 2) * size.height,
-          }]
-        : [];
-    });
-    onProject(projectedAnnotations);
   });
 
   return (
-    <group ref={groupRef} position={position} rotation={rotation} scale={scale}>
-      <primitive
-        object={preparedScene}
-      />
+    <group position={position} rotation={rotation} scale={scale}>
+      <primitive object={preparedScene} />
+      {annotations.map((annotation) => (
+        <Fragment key={annotation.name}>
+          {createPortal(
+            <AnnotationMarker
+              annotation={annotation}
+              occluders={occluders}
+              selected={selectedName === annotation.name}
+              onSelect={onSelect}
+            />,
+            annotation.anchor,
+          )}
+        </Fragment>
+      ))}
     </group>
   );
 }
 
 function LoadingMessage() {
-  return null;
+  return (
+    <Html center>
+      <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.25em] text-cyan-100/70">
+        Cargando…
+      </span>
+    </Html>
+  );
 }
 
-function CameraIntro() {
-  const { camera } = useThree();
-  const elapsed = useRef(0);
-  const destination = useMemo(() => new Vector3(6, 4.5, 8), []);
-  const target = useMemo(() => new Vector3(0, 1.8, 0), []);
-  const initialPosition = useMemo(() => new Vector3(8, 5.5, 11), []);
+/* ------------------------------------------------------------------ */
+/* Cámara: entrada suave hacia vista isométrica + controles para móvil */
+/* ------------------------------------------------------------------ */
+
+const CAMERA_TARGET = [0, 1.9, 0];
+// Vista isométrica clásica: 45° de azimut y ~35.26° de elevación.
+const ISO_THETA = Math.PI / 4;
+const ISO_PHI = Math.PI / 2 - Math.atan(1 / Math.SQRT2);
+// Punto de partida: más de frente (se ve la puerta), más bajo y más lejos.
+const START_THETA = ISO_THETA - 0.75;
+const START_PHI = Math.PI / 2 - MathUtils.degToRad(13);
+const INTRO_SECONDS = 3.6;
+const PULLBACK = 0.3; // cuánto se aleja la cámara con las paredes abiertas (30 %)
+
+function CameraRig({ openProgress }) {
+  const { camera, size } = useThree();
+  const controlsRef = useRef();
+  const intro = useRef({ startedAt: null, active: true });
+  const spherical = useMemo(() => new Spherical(), []);
+  const target = useMemo(() => new Vector3(...CAMERA_TARGET), []);
+
+  // Distancia que encuadra la caja según el formato de pantalla (móvil o PC).
+  const fit = useMemo(() => {
+    const aspect = size.width / Math.max(size.height, 1);
+    const verticalHalf = MathUtils.degToRad(camera.fov) / 2;
+    const horizontalHalf = Math.atan(Math.tan(verticalHalf) * aspect);
+    return 3.9 / Math.sin(Math.min(verticalHalf, horizontalHalf));
+  }, [camera.fov, size.width, size.height]);
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+
+  // Al abrir las paredes la cámara se aleja un poco para que quepan plegadas.
+  const openRef = useRef(openProgress);
+  openRef.current = openProgress;
+  const pullback = useRef({ value: 0, applied: 1 });
+
+  const reducedMotion = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+
+  const place = (theta, phi, radius) => {
+    spherical.set(radius, phi, theta);
+    camera.position.setFromSpherical(spherical).add(target);
+    camera.lookAt(target);
+  };
+
+  useLayoutEffect(() => {
+    if (reducedMotion) {
+      intro.current.active = false;
+      place(ISO_THETA, ISO_PHI, fitRef.current);
+    } else {
+      place(START_THETA, START_PHI, fitRef.current * 1.25);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    camera.position.copy(initialPosition);
-    camera.lookAt(target);
-    elapsed.current = 0;
-  }, [camera, initialPosition, target]);
+    // Si la persona toca la escena, la animación de entrada se cancela.
+    const controls = controlsRef.current;
+    const stopIntro = () => {
+      intro.current.active = false;
+    };
+    controls?.addEventListener("start", stopIntro);
+    return () => controls?.removeEventListener("start", stopIntro);
+  }, []);
 
   useFrame((_, delta) => {
-    if (elapsed.current >= 1.8) return;
+    const pull = pullback.current;
+    pull.value +=
+      (openRef.current - pull.value) * (1 - Math.exp(-3 * Math.min(delta, 0.05)));
+    if (intro.current.active) return; // la intro ya aplica el zoom por su cuenta
 
-    elapsed.current = Math.min(elapsed.current + delta, 1.8);
-    const progress = elapsed.current / 1.8;
-    const easedProgress = 1 - Math.pow(1 - progress, 3);
-    camera.position.lerpVectors(initialPosition, destination, easedProgress);
-    camera.lookAt(target);
+    const zoom = 1 + PULLBACK * pull.value;
+    if (Math.abs(zoom - pull.applied) > 1e-5) {
+      // Escala la distancia actual sin tocar el ángulo que eligió la persona.
+      camera.position
+        .sub(target)
+        .multiplyScalar(zoom / pull.applied)
+        .add(target);
+      pull.applied = zoom;
+    }
   });
 
-  return null;
+  useFrame(({ clock }) => {
+    const state = intro.current;
+    if (!state.active) return;
+
+    // Se mide con el reloj real: dura lo mismo en un celular lento o en un PC.
+    if (state.startedAt === null) state.startedAt = clock.elapsedTime;
+    const zoom = 1 + PULLBACK * pullback.current.value;
+    const t = Math.min(
+      (clock.elapsedTime - state.startedAt) / INTRO_SECONDS,
+      1,
+    );
+    const eased = -(Math.cos(Math.PI * t) - 1) / 2; // easeInOutSine
+    place(
+      MathUtils.lerp(START_THETA, ISO_THETA, eased),
+      MathUtils.lerp(START_PHI, ISO_PHI, eased),
+      MathUtils.lerp(fitRef.current * 1.25, fitRef.current, eased) * zoom,
+    );
+    pullback.current.applied = zoom;
+    if (t >= 1) state.active = false;
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enableDamping
+      dampingFactor={0.07}
+      rotateSpeed={0.55}
+      zoomSpeed={0.7}
+      enablePan={false}
+      target={CAMERA_TARGET}
+      minDistance={fit * 0.5}
+      maxDistance={fit * 1.8}
+      minPolarAngle={Math.PI * 0.18}
+      maxPolarAngle={Math.PI * 0.52}
+    />
+  );
 }
 
-function ExperienceContext() {
+/* ------------------------------------------------------------------ */
+/* Entorno spooky: suelo difuso, polvo en el aire y luz que parpadea    */
+/* ------------------------------------------------------------------ */
+
+function createRadialTexture(stops) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
+  stops.forEach(([offset, color]) => gradient.addColorStop(offset, color));
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 256, 256);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+function Ground() {
+  // Capas planas con degradado radial: se funden con el fondo, sin horizonte
+  // ni paredes que delaten el borde del escenario.
+  const textures = useMemo(
+    () => ({
+      floor: createRadialTexture([
+        [0, "rgba(24,38,45,1)"],
+        [0.55, "rgba(13,21,26,0.85)"],
+        [1, "rgba(7,11,14,0)"],
+      ]),
+      glow: createRadialTexture([
+        [0, "rgba(70,220,205,0.30)"],
+        [0.4, "rgba(40,130,130,0.10)"],
+        [1, "rgba(0,0,0,0)"],
+      ]),
+      shadow: createRadialTexture([
+        [0, "rgba(0,0,0,0.85)"],
+        [0.55, "rgba(0,0,0,0.4)"],
+        [1, "rgba(0,0,0,0)"],
+      ]),
+    }),
+    [],
+  );
+
+  const layers = [
+    { texture: textures.floor, size: 44, y: -0.06, order: -3 },
+    { texture: textures.glow, size: 12, y: -0.058, order: -2 },
+    { texture: textures.shadow, size: 8.5, y: -0.056, order: -1 },
+  ];
+
   return (
     <>
-      <color attach="background" args={["#101820"]} />
-      <fog attach="fog" args={["#101820", 12, 24]} />
-      <mesh position={[0, 3.5, -4.5]}>
-        <planeGeometry args={[18, 7]} />
-        <meshStandardMaterial color="#17252b" roughness={1} />
-      </mesh>
-      <mesh position={[-4.5, 2.2, 0]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[9, 4.5]} />
-        <meshStandardMaterial color="#1b2b31" roughness={1} />
-      </mesh>
-      <pointLight position={[0, 5, 1]} color="#d9f7ff" intensity={35} distance={12} />
-      <pointLight position={[-4, 2.5, 3]} color="#35d3d1" intensity={18} distance={9} />
-      <pointLight position={[4, 2, -2]} color="#ffb36b" intensity={12} distance={8} />
+      {layers.map(({ texture, size, y, order }) => (
+        <mesh
+          key={order}
+          position={[0, y, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          renderOrder={order}
+        >
+          <planeGeometry args={[size, size]} />
+          <meshBasicMaterial
+            map={texture}
+            transparent
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+function Dust({ count }) {
+  const ref = useRef();
+  const dot = useMemo(
+    () =>
+      createRadialTexture([
+        [0, "rgba(255,255,255,1)"],
+        [0.4, "rgba(255,255,255,0.35)"],
+        [1, "rgba(255,255,255,0)"],
+      ]),
+    [],
+  );
+  const positions = useMemo(() => {
+    const values = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      const radius = 2 + Math.random() * 8;
+      const angle = Math.random() * Math.PI * 2;
+      values[i * 3] = Math.cos(angle) * radius;
+      values[i * 3 + 1] = Math.random() * 7;
+      values[i * 3 + 2] = Math.sin(angle) * radius;
+    }
+    return values;
+  }, [count]);
+
+  useFrame(({ clock }, delta) => {
+    if (!ref.current) return;
+    ref.current.rotation.y += Math.min(delta, 0.05) * 0.015;
+    ref.current.position.y = Math.sin(clock.elapsedTime * 0.15) * 0.25;
+  });
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        map={dot}
+        color="#9fe3dc"
+        size={0.16}
+        sizeAttenuation
+        transparent
+        opacity={0.4}
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+const FLICKER_BASE = 22;
+
+function SpookyLights() {
+  const flicker = useRef();
+
+  useFrame(({ clock }) => {
+    if (!flicker.current) return;
+    const t = clock.elapsedTime;
+    let level = 0.88 + Math.sin(t * 2.1) * 0.05 + Math.sin(t * 7.3) * 0.04;
+    // De vez en cuando la luz se "cae" un instante.
+    if (Math.sin(t * 0.9) * Math.sin(t * 1.7) > 0.93) level *= 0.3;
+    flicker.current.intensity = FLICKER_BASE * level;
+  });
+
+  // Solo tres luces: ambiente tenue, luz fría de contorno y una luz
+  // interior que parpadea.
+  return (
+    <>
+      <ambientLight intensity={0.45} color="#6f8ea8" />
+      <directionalLight position={[4, 7, 6]} intensity={1.05} color="#b8d4ff" />
+      <pointLight
+        ref={flicker}
+        position={[0, 3.2, 0]}
+        color="#5ff0dc"
+        intensity={FLICKER_BASE}
+        distance={9}
+      />
+    </>
+  );
+}
+
+function SpookyScene({ dustCount }) {
+  return (
+    <>
+      <SpookyLights />
+      <Ground />
+      <Dust count={dustCount} />
     </>
   );
 }
@@ -630,22 +896,55 @@ export default function ModelViewer({
   scale = 1,
   faceDetails = defaultFaceDetails,
 }) {
+  const containerRef = useRef(null);
   const [explosionProgress, setExplosionProgress] = useState(0);
   const [selectedPart, setSelectedPart] = useState(null);
-  const [annotationPositions, setAnnotationPositions] = useState([]);
+  const [inView, setInView] = useState(true);
   const isOpen = explosionProgress > 0.5;
+  // Menos partículas en pantallas pequeñas para cuidar la batería y los FPS.
+  const [dustCount] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 768 ? 80 : 150,
+  );
+
+  // Pausa el render cuando el visor no está en pantalla (ahorra batería).
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const toggleSelection = (annotation) =>
+    setSelectedPart((current) =>
+      current?.name === annotation.name ? null : annotation,
+    );
 
   return (
     <div className={`w-full ${className}`}>
       <div
-        className={`relative w-full overflow-hidden bg-transparent ${
+        ref={containerRef}
+        className={`relative w-full overflow-hidden ${
           immersive
-            ? "h-[calc(100vh-5rem)] min-h-[640px]"
+            ? "h-[calc(100svh-5rem)] min-h-[560px]"
             : "h-[420px] rounded-2xl border border-white/10"
         }`}
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 70% at 50% 58%, #15252c 0%, #0b1317 60%, #070b0e 100%)",
+        }}
       >
+        {/* Desvanecidos para que el visor se funda con el resto de la página */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-16 bg-gradient-to-b from-[#101820] to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-24 bg-gradient-to-t from-[#101820] to-transparent" />
+
         {selectedPart && (
-          <div className="pointer-events-none absolute right-6 top-6 z-40">
+          <div className="pointer-events-none absolute inset-x-4 bottom-44 z-40 md:inset-x-auto md:bottom-auto md:right-6 md:top-6">
             <DetailsCard
               details={selectedPart.details}
               onClose={() => setSelectedPart(null)}
@@ -670,20 +969,26 @@ export default function ModelViewer({
               setExplosionProgress(Number(event.target.value))
             }
             aria-label="Abrir paredes de la caja"
-            className="block h-1 w-full cursor-ew-resize accent-cyan-300"
+            className="block h-1 w-full cursor-ew-resize touch-none accent-cyan-300"
           />
         </div>
         <ModelErrorBoundary>
           <Canvas
-            camera={{ position: [6, 4.5, 8], fov: 50 }}
-            dpr={[1, 2]}
-            gl={{ antialias: true, alpha: true }}
+            // OrbitControls bloquea todo gesto táctil (touch-action: none) sobre
+            // el contenedor del canvas. "!touch-pan-y" lo corrige con !important:
+            // deslizar vertical hace scroll de la página y deslizar horizontal
+            // orbita, así el visor no atrapa la pantalla en el celular.
+            className="!touch-pan-y"
+            camera={{ position: [6, 4.5, 8], fov: 50, near: 0.1, far: 100 }}
+            dpr={[1, 1.75]}
+            frameloop={inView ? "always" : "never"}
+            gl={{
+              antialias: true,
+              alpha: true,
+              powerPreference: "high-performance",
+            }}
           >
-            <CameraIntro />
-            <ExperienceContext />
-            <ambientLight intensity={1.5} />
-            <directionalLight position={[3, 5, 2]} intensity={2} />
-            <directionalLight position={[-3, 2, -2]} intensity={1} />
+            <SpookyScene dustCount={dustCount} />
             <Suspense fallback={<LoadingMessage />}>
               <Model
                 model={model}
@@ -692,28 +997,16 @@ export default function ModelViewer({
                 scale={scale}
                 faceDetails={faceDetails}
                 explosionProgress={explosionProgress}
-                onProject={setAnnotationPositions}
+                selectedName={selectedPart?.name}
+                onSelect={toggleSelection}
               />
+              <CameraRig openProgress={explosionProgress} />
             </Suspense>
-            <OrbitControls
-              enableDamping
-              dampingFactor={0.08}
-              rotateSpeed={0.5}
-              zoomSpeed={0.65}
-              enablePan={false}
-              target={[0, 1.8, 0]}
-              minDistance={3.5}
-              maxDistance={14}
-              minPolarAngle={Math.PI * 0.2}
-              maxPolarAngle={Math.PI * 0.8}
-            />
           </Canvas>
         </ModelErrorBoundary>
-        <AnnotationOverlay
-          annotations={annotationPositions}
-          onSelect={setSelectedPart}
-        />
       </div>
     </div>
   );
 }
+
+useGLTF.preload(defaultModel);
