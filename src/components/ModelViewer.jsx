@@ -47,7 +47,7 @@ const defaultPartDetails = {
   },
   MESA: {
     title: "Módulo inferior",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "80 cm"]],
+    dimensions: [["Ancho", "100 cm"], ["Alto", "80 cm"]],
   },
   SILLA: {
     title: "Silla",
@@ -57,14 +57,14 @@ const defaultPartDetails = {
   "Azulejos_Caidos": {
     title: "SUELO",
     dimensions: [
-      ["Ancho", "200 cm"],
-      ["Profundidad", "200 cm"],
+      ["Ancho", "180 cm"],
+      ["Profundidad", "180 cm"],
     ],
     specifications: [["Espesor", "6.8 cm"]],
   },
   "Azulejos_Pared_Trasera": {
     title: "PARED TRASERA",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
   },
   "Televisor": {
     title: "TELEVISOR",
@@ -72,7 +72,7 @@ const defaultPartDetails = {
   },
   "Habitacion como tal": {
     title: "ESTRUCTURA PRINCIPAL",
-    dimensions: [["Área", "200 × 200 cm"]],
+    dimensions: [["Área", "180 × 180 cm"]],
   },
 };
 
@@ -169,22 +169,22 @@ function getDetailsForName(name, faceDetails) {
 const defaultFaceDetails = {
   front: {
     title: "PARED TRASERA",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
     specifications: [["Tipo", "Cara trasera"]],
   },
   back: {
     title: "PARED TRASERA",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
     specifications: [["Tipo", "Cara trasera"]],
   },
   right: {
     title: "PARED PUERTA",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
-    specifications: [["Puerta", "120 × 80 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
+    specifications: [["Puerta", "170 × 80 cm"]],
   },
   left: {
     title: "PARED TV",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
     specifications: [
       ["Abertura TV", "73 × 43 cm"],
       ["Módulo lateral", "60 cm"],
@@ -195,12 +195,12 @@ const defaultFaceDetails = {
   },
   top: {
     title: "PARED SENCILLA",
-    dimensions: [["Ancho", "200 cm"], ["Alto", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Alto", "180 cm"]],
     specifications: [["Tipo", "Cara sencilla"]],
   },
   bottom: {
     title: "SUELO",
-    dimensions: [["Ancho", "200 cm"], ["Profundidad", "200 cm"]],
+    dimensions: [["Ancho", "180 cm"], ["Profundidad", "180 cm"]],
     specifications: [["Espesor", "6.8 cm"]],
   },
 };

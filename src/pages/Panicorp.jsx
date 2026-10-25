@@ -98,6 +98,13 @@ export default function Panicorp() {
   const [textoListo, setTextoListo] = useState(false);
   const [textoActive, setTextoActive] = useState(0);
   const [pausado, setPausado] = useState(false);
+  // En pantallas táctiles no hay "hover" para pausar, y 9 s no alcanzan para
+  // leer el texto en un celular: allí el cambio de sección es manual.
+  const [tactil] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(hover: none) and (pointer: coarse)').matches
+  );
 
   const cardRefs = useRef([]);
   const activeVideoRef = useRef(null);
@@ -118,6 +125,13 @@ export default function Panicorp() {
     const el = cardRefs.current[i];
     if (!el) return;
     limpiarTimers();
+
+    // En móvil/tablet: vuelve arriba (ahí está el selector) y centra la card
+    // elegida en su carrusel, ANTES de medirla para animar el video desde ella.
+    if (window.innerWidth < 1024) {
+      if (window.scrollY > 0) window.scrollTo(0, 0);
+      el.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    }
 
     const r = el.getBoundingClientRect();
     const desde = `inset(${r.top}px ${window.innerWidth - r.right}px ${
@@ -169,14 +183,14 @@ export default function Panicorp() {
 
   // Avance automático: solo corre cuando el texto ya está visible
   useEffect(() => {
-    if (pausado || !textoListo) return;
+    if (pausado || tactil || !textoListo) return;
     const t = setTimeout(siguiente, AUTOPLAY_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, pausado, textoListo]);
+  }, [active, pausado, tactil, textoListo]);
 
   return (
-    <div className="relative min-h-screen bg-black text-white font-['Orbitron'] selection:bg-[#62A8DB] selection:text-black overflow-x-hidden">
+    <div className="relative min-h-screen min-h-[100svh] bg-black text-white font-['Orbitron'] selection:bg-[#62A8DB] selection:text-black overflow-x-hidden">
       {/* FONDO BASE: el último video que ya llenó la pantalla */}
       {base !== null && (
         <video
@@ -210,56 +224,58 @@ export default function Panicorp() {
       />
 
       {/* OVERLAYS: legibilidad del texto + filtro CRT */}
-      <div className="fixed inset-0 bg-gradient-to-r from-black/90 via-black/55 to-black/20 z-0 pointer-events-none" />
+      {/* En móvil el texto ocupa todo el ancho: oscurecimiento parejo; en escritorio, degradado lateral */}
+      <div className="fixed inset-0 bg-gradient-to-b from-black/85 via-black/70 to-black/85 lg:bg-gradient-to-r lg:from-black/90 lg:via-black/55 lg:to-black/20 z-0 pointer-events-none" />
       <div className="fixed inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 z-0 pointer-events-none" />
       <div className="fixed inset-0 pointer-events-none z-10 opacity-20 mix-blend-overlay bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px]" />
 
       {/* CONTENIDO */}
-      <div className="relative z-20 flex flex-col min-h-screen">
+      <div className="relative z-20 flex flex-col min-h-screen min-h-[100svh]">
         <Navbar />
 
         <main
-          className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-10 flex flex-col"
+          className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-10 flex flex-col"
           onMouseEnter={() => setPausado(true)}
           onMouseLeave={() => setPausado(false)}
         >
           {/* Miga de pan */}
-          <div className="flex items-center  mb-8 border-b border-[#62A8DB]/20 pb-4">
-            <span className="hidden sm:block text-[10px] text-zinc-400 font-mono tracking-widest uppercase">
-              SECCIÓN: CONCEPTO & ESTRUCTURA // PAN-01
+          <div className="flex items-center mb-5 sm:mb-8 border-b border-[#62A8DB]/20 pb-3 sm:pb-4">
+            <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase">
+              <span className="sm:hidden">PAN-01 // CONCEPTO</span>
+              <span className="hidden sm:inline">SECCIÓN: CONCEPTO & ESTRUCTURA // PAN-01</span>
             </span>
           </div>
 
-          <section className="flex-1 grid lg:grid-cols-[1.1fr_1fr] gap-10 items-center">
+          <section className="flex-1 grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1.1fr_1fr] gap-8 lg:gap-10 items-start lg:items-center">
             {/* ===== TEXTO: aparece cuando el video ya llenó el fondo ===== */}
             <div
-              className="max-w-xl"
+              className="order-2 lg:order-1 min-w-0 max-w-xl"
               style={{ opacity: textoListo ? 1 : 0, transform: textoListo ? 'translateY(0)' : 'translateY(12px)', filter: textoListo ? 'blur(0)' : 'blur(3px)', transition: 'opacity 680ms ease, transform 750ms cubic-bezier(.2,.8,.2,1), filter 680ms ease', pointerEvents: textoListo ? 'auto' : 'none' }}
             >
               <div key={textoActive}>
-                <div className="text-in flex items-center gap-3 mb-5">
-                  <span className="block w-8 h-[2px] bg-[#62A8DB]" />
-                  <span className="text-[10px] font-bold tracking-[0.3em] text-[#62A8DB] uppercase px-3 py-1.5 bg-[#62A8DB]/10 border border-[#62A8DB]/30 backdrop-blur-md">
+                <div className="text-in flex items-center gap-3 mb-4 sm:mb-5">
+                  <span className="block w-6 sm:w-8 shrink-0 h-[2px] bg-[#62A8DB]" />
+                  <span className="text-[10px] font-bold tracking-[0.18em] sm:tracking-[0.3em] text-[#62A8DB] uppercase px-3 py-1.5 bg-[#62A8DB]/10 border border-[#62A8DB]/30 backdrop-blur-md">
                     {textoActual.tag}
                   </span>
                 </div>
 
                 <h1
-                  className="text-in text-4xl sm:text-5xl xl:text-6xl font-[900] tracking-wider leading-[1.05] text-white drop-shadow-[0_0_25px_rgba(98,168,219,0.35)]"
+                  className="text-in text-2xl min-[400px]:text-3xl sm:text-5xl xl:text-6xl font-[900] tracking-wide sm:tracking-wider leading-[1.1] sm:leading-[1.05] break-words text-white drop-shadow-[0_0_25px_rgba(98,168,219,0.35)]"
                   style={{ animationDelay: '100ms' }}
                 >
                   {textoActual.titulo}
                 </h1>
 
                 <p
-                  className="text-in text-[11px] font-bold tracking-[0.25em] text-[#62A8DB] mt-3 mb-5 uppercase"
+                  className="text-in text-[10px] sm:text-[11px] font-bold tracking-[0.18em] sm:tracking-[0.25em] text-[#62A8DB] mt-3 mb-4 sm:mb-5 uppercase"
                   style={{ animationDelay: '200ms' }}
                 >
                   {textoActual.subtitulo}
                 </p>
 
                 <div
-                  className="text-in text-lg text-zinc-200 leading-relaxed font-sans mb-6 space-y-3"
+                  className="text-in text-sm sm:text-base lg:text-lg text-zinc-200 leading-relaxed font-sans mb-5 sm:mb-6 space-y-3"
                   style={{ animationDelay: '300ms' }}
                 >
                   {separarDescripcion(textoActual.descripcion).map((parrafo, idx) => (
@@ -267,11 +283,11 @@ export default function Panicorp() {
                   ))}
                 </div>
 
-                <div className="space-y-3 mb-7">
+                <div className="space-y-3 mb-6 sm:mb-7">
                   {textoActual.puntos.map((p, idx) => (
                     <div
                       key={idx}
-                      className="text-in flex items-start gap-2.5 text-md text-zinc-300 font-sans leading-relaxed"
+                      className="text-in flex items-start gap-2.5 text-sm sm:text-base text-zinc-300 font-sans leading-relaxed"
                       style={{ animationDelay: `${400 + idx * 100}ms` }}
                     >
                       <span className="text-[#62A8DB] font-bold">▸</span>
@@ -281,25 +297,25 @@ export default function Panicorp() {
                 </div>
 
                 <div
-                  className="text-in pt-4 border-t border-[#62A8DB]/25 space-y-2 mb-8 max-w-md"
+                  className="text-in pt-4 border-t border-[#62A8DB]/25 space-y-3 sm:space-y-2 mb-6 sm:mb-8 max-w-md"
                   style={{ animationDelay: '700ms' }}
                 >
                   {textoActual.metricas.map((m, idx) => (
-                    <div key={idx} className="flex justify-between items-center gap-4 text-[10px] font-mono">
+                    <div key={idx} className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center sm:gap-4 text-[10px] font-mono">
                       <span className="text-zinc-400 uppercase">{m.label}:</span>
-                      <span className="text-[#62A8DB] font-bold text-right">{m.val}</span>
+                      <span className="text-[#62A8DB] font-bold sm:text-right">{m.val}</span>
                     </div>
                   ))}
                 </div>
 
-                <div className="text-in flex flex-wrap gap-4" style={{ animationDelay: '800ms' }}>
-                  <Link to="/tecnologias">
-                    <button className="px-6 py-3 text-xs font-black tracking-[0.2em] uppercase text-black bg-[#62A8DB] hover:bg-white transition-all shadow-[0_0_15px_rgba(98,168,219,0.4)]">
-                      TECNOLOGIAS →
+                <div className="text-in flex flex-wrap gap-3 sm:gap-4" style={{ animationDelay: '800ms' }}>
+                  <Link to="/proyectos" className="flex-1 min-w-[9rem] sm:flex-none">
+                    <button className="w-full sm:w-auto px-5 sm:px-6 py-3.5 sm:py-3 text-xs font-black tracking-[0.2em] uppercase text-black bg-[#62A8DB] hover:bg-white transition-all shadow-[0_0_15px_rgba(98,168,219,0.4)]">
+                      PROYECTOS →
                     </button>
                   </Link>
-                  <Link to="/nosotros  ">
-                    <button className="px-6 py-3 text-xs font-black tracking-[0.2em] uppercase text-zinc-200 bg-black/40 backdrop-blur-md hover:bg-zinc-900 border border-zinc-600">
+                  <Link to="/nosotros" className="flex-1 min-w-[9rem] sm:flex-none">
+                    <button className="w-full sm:w-auto px-5 sm:px-6 py-3.5 sm:py-3 text-xs font-black tracking-[0.2em] uppercase text-zinc-200 bg-black/40 backdrop-blur-md hover:bg-zinc-900 border border-zinc-600">
                       NOSOTROS →
                     </button>
                   </Link>
@@ -308,8 +324,8 @@ export default function Panicorp() {
             </div>
 
             {/* ===== CARDS VERTICALES (selector) ===== */}
-            <div className="flex flex-col gap-6 lg:items-end">
-              <div className="flex gap-4 sm:gap-5 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0 snap-x">
+            <div className="order-1 lg:order-2 min-w-0 flex flex-col gap-4 sm:gap-6 lg:items-end">
+              <div className="flex w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] lg:w-auto gap-3 sm:gap-5 overflow-x-auto lg:overflow-visible pt-4 pb-2 lg:pt-0 lg:pb-0 -mx-4 sm:-mx-6 lg:mx-0 px-4 sm:px-6 lg:px-0 scroll-px-4 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {tarjetas.map((c, i) => {
                   const esActiva = i === active;
                   return (
@@ -319,9 +335,9 @@ export default function Panicorp() {
                       onClick={() => !esActiva && ir(i)}
                       aria-label={`Ver ${c.titulo}`}
                       aria-pressed={esActiva}
-                      className={`group relative shrink-0 snap-start w-40 sm:w-44 xl:w-48 h-64 sm:h-72 overflow-hidden text-left border transition-all duration-500 ease-out ${
+                      className={`group relative shrink-0 snap-start w-36 sm:w-44 xl:w-48 h-52 sm:h-72 overflow-hidden text-left border transition-all duration-500 ease-out ${
                         esActiva
-                          ? 'border-[#62A8DB] -translate-y-3 shadow-[0_0_35px_rgba(98,168,219,0.45)]'
+                          ? 'border-[#62A8DB] -translate-y-2 sm:-translate-y-3 shadow-[0_0_35px_rgba(98,168,219,0.45)]'
                           : 'border-zinc-700 opacity-75 hover:opacity-100 hover:-translate-y-1 hover:border-[#62A8DB]/60'
                       }`}
                     >
@@ -342,20 +358,20 @@ export default function Panicorp() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/30" />
 
-                      <span className="absolute top-3 left-3 text-xs font-black tracking-widest text-[#62A8DB]">
+                      <span className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 text-xs font-black tracking-widest text-[#62A8DB]">
                         [{c.id}]
                       </span>
 
-                      <div className="absolute bottom-0 left-0 right-0 p-4">
+                      <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4">
                         <span
                           className={`block h-[2px] mb-2 bg-[#62A8DB] transition-all duration-500 ${
                             esActiva ? 'w-10' : 'w-4'
                           }`}
                         />
-                        <p className="text-[9px] tracking-[0.2em] text-zinc-300 font-mono uppercase mb-1">
+                        <p className="text-[8px] sm:text-[9px] tracking-[0.15em] sm:tracking-[0.2em] text-zinc-300 font-mono uppercase mb-1">
                           {c.tag}
                         </p>
-                        <p className="text-lg font-[900] tracking-wider leading-tight text-white">
+                        <p className="text-base sm:text-lg font-[900] tracking-wider leading-tight text-white">
                           {c.corto}
                         </p>
                       </div>
@@ -365,7 +381,7 @@ export default function Panicorp() {
               </div>
 
               {/* Controles */}
-              <div className="flex items-center gap-4 w-full lg:max-w-[34rem]">
+              <div className="flex items-center gap-3 sm:gap-4 w-full lg:max-w-[34rem]">
                 <button
                   onClick={anterior}
                   aria-label="Anterior"
@@ -386,8 +402,8 @@ export default function Panicorp() {
                     key={`${active}-${textoListo}-${pausado}`}
                     className="absolute inset-0 origin-left bg-[#62A8DB]"
                     style={{
-                      animation: pausado || !textoListo ? 'none' : `progress ${AUTOPLAY_MS}ms linear forwards`,
-                      transform: !textoListo ? 'scaleX(0)' : pausado ? 'scaleX(1)' : undefined,
+                      animation: pausado || tactil || !textoListo ? 'none' : `progress ${AUTOPLAY_MS}ms linear forwards`,
+                      transform: !textoListo || tactil ? 'scaleX(0)' : pausado ? 'scaleX(1)' : undefined,
                       opacity: pausado ? 0.4 : 1,
                     }}
                   />
@@ -395,7 +411,7 @@ export default function Panicorp() {
 
                 <span
                   key={active}
-                  className="text-3xl font-[900] tracking-wider text-white tabular-nums"
+                  className="text-2xl sm:text-3xl font-[900] tracking-wider text-white tabular-nums"
                   style={{ animation: 'numIn .5s ease-out' }}
                 >
                   {String(active + 1).padStart(2, '0')}
