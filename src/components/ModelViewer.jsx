@@ -951,7 +951,7 @@ export default function ModelViewer({
             />
           </div>
         )}
-        <div className="pointer-events-auto absolute bottom-14 right-4 z-20 w-44 rounded-sm border border-white/15 bg-[#101820]/80 px-3 py-3 text-white backdrop-blur-sm md:bottom-6 md:right-8 md:w-52">
+        <div className="pointer-events-auto absolute bottom-20 right-4 z-20 w-44 rounded-sm border border-white/15 bg-[#101820]/80 px-3 py-3 text-white backdrop-blur-sm md:bottom-6 md:right-8 md:w-52">
           <button
             type="button"
             onClick={() => setExplosionProgress(isOpen ? 0 : 1)}
