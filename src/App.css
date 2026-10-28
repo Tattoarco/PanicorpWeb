@@ -27,3 +27,22 @@ body {
   animation: textIn 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
+.countdown-glitch {
+  background:
+    linear-gradient(transparent 0 47%, rgba(104, 165, 214, 0.11) 47.2% 48%, transparent 48.3%),
+    repeating-linear-gradient(to bottom, transparent 0 3px, rgba(210, 235, 255, 0.055) 4px, transparent 5px);
+  opacity: 0.34;
+  animation: countdown-interference 7s steps(1, end) infinite;
+}
+
+@keyframes countdown-interference {
+  0%, 88%, 90%, 93%, 100% { opacity: 0.2; transform: translateX(0); }
+  89% { opacity: 0.55; transform: translateX(-5px); }
+  91% { opacity: 0.38; transform: translateX(4px); }
+  92% { opacity: 0.62; transform: translateX(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countdown-glitch { animation: none; }
+}
+

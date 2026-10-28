@@ -31,11 +31,22 @@ export default function CuentaRegresiva() {
   const hasArrived = Object.values(timeLeft).every((unit) => unit === 0);
 
   return (
-    <main className="relative isolate flex min-h-svh items-center justify-center overflow-hidden bg-[#05090d] px-5 py-12 text-white selection:bg-[#68a5d6] selection:text-[#05090d]">
+    <main className="countdown-screen relative isolate flex min-h-svh items-center justify-center overflow-hidden bg-[#05090d] px-5 py-12 text-white selection:bg-[#68a5d6] selection:text-[#05090d]">
+      <video
+        aria-hidden="true"
+        autoPlay
+        loop
+        playsInline
+        preload="metadata"
+        className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-20"
+      >
+        <source src="/glitch.mp4" type="video/mp4" />
+      </video>
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_42%,rgba(53,115,158,0.2),transparent_55%)]" />
+      <div aria-hidden="true" className="countdown-glitch pointer-events-none absolute inset-0 -z-10" />
       <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.12] [background-image:linear-gradient(rgba(104,165,214,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(104,165,214,0.16)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
 
-      <section className="w-full max-w-5xl text-center">
+      <section className="relative z-10 w-full max-w-5xl text-center">
         <div className="mx-auto mb-7 flex h-24 w-24 items-center justify-center rounded-full border border-[#68a5d6]/40 bg-[#d9edfa] shadow-[0_0_55px_rgba(104,165,214,0.18)] sm:mb-9 sm:h-28 sm:w-28">
           <img
             src="/Isotipo.svg"
