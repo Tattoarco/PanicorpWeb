@@ -87,6 +87,9 @@ export default function CuentaRegresiva() {
             ? "¡Ya comenzó! Te esperamos."
             : "10 de noviembre · 9:00 a. m. · Hora de Colombia"}
         </p>
+        <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-[#8dbce0]/75 sm:text-xs">
+          Salón 204 · Bloque 11 · UPB
+        </p>
         <div className="mx-auto mt-9 h-px w-20 bg-gradient-to-r from-transparent via-[#68a5d6]/70 to-transparent sm:mt-11" />
         <p className="mt-5 text-[9px] tracking-[0.32em] text-white/30">
           PANICORP SENSORY LAB
